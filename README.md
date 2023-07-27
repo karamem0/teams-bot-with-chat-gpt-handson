@@ -100,6 +100,7 @@
 
         ```csharp
         using Microsoft.Extensions.Configuration;
+        using System;
         using Azure.AI.OpenAI;
         ```
 
@@ -121,7 +122,7 @@
         ```csharp
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
-            var accessor = this.conversationState.CreateProperty<List<ChatMessage>>(nameof(ChatMessage));
+            var accessor = this.conversationState.CreateProperty<List<Tuple<string, string>>>(nameof(ChatMessage));
             var messages = await accessor.GetAsync(turnContext, () => new(), cancellationToken);
             while (messages.Count > 8)
             {
@@ -134,7 +135,10 @@
             ));
             foreach (var message in messages)
             {
-                chatCompletionsOptions.Messages.Add(message);
+                chatCompletionsOptions.Messages.Add(new ChatMessage(
+                    new ChatRole(message.Item1),
+                    message.Item2
+                ));
             }
             chatCompletionsOptions.Messages.Add(new ChatMessage(ChatRole.User, turnContext.Activity.Text));
             var chatCompletion = await this.chatClient.GetChatCompletionsAsync(
@@ -144,16 +148,16 @@
             );
             var replyText = chatCompletion.Value.Choices[0].Message.Content;
             await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
-            messages.Add(new ChatMessage(ChatRole.User, turnContext.Activity.Text));
-            messages.Add(new ChatMessage(ChatRole.Assistant, replyText));
+            messages.Add(new Tuple<string, string>(ChatRole.User.ToString(), turnContext.Activity.Text));
+            messages.Add(new Tuple<string, string>(ChatRole.Assistant.ToString(), replyText));
             await accessor.SetAsync(turnContext, messages, cancellationToken);
             await this.conversationState.SaveChangesAsync(turnContext, cancellationToken: cancellationToken);
-        }
+       }
         ```
 
 1. デバッグを開始します。**実行** - **デバッグの開始** をクリックします。以下のような画面が表示されることを確認します。
 
-![001.png](./img/001.png)
+    ![001.png](./img/001.png)
 
 1. Bot Framework Emulator から作成したボットに接続します。Bot Framework Emulator を起動し、**Open Bot** をクリックします。必要な項目を入力し **Connect** をクリックします。
 
@@ -161,11 +165,11 @@
     |-|-|
     |Bot URL|`http://localhost:3978/api/messages`|
 
-![002.png](./img/002.png)
+    ![002.png](./img/002.png)
 
 1. チャット欄に質問を入力し回答が得られることを確認します。
 
-![003.png](./img/003.png)
+    ![003.png](./img/003.png)
 
 ### Azure AD アプリケーションを作成する
 
@@ -174,37 +178,175 @@
 1. [Microsoft Entra 管理センター](https://entra.microsoft.com) にアクセスし **Microsoft 365 開発者プログラムで作成したテナント** のアカウントでサインインします。
 1. メニューの **ID** - **アプリケーション** - **アプリの登録** をクリックします。
 1. **新規登録** をクリックします。
-1. 必要な項目を入力し **登録** をクリックします。
+1. 以下の項目を入力し **登録** をクリックします。
 
     |項目名|項目値|
     |-|-|
-    |名前|ChatGPT Teams Bot|
+    |名前|Teams AI Bot|
     |サポートされているアカウントの種類|この組織ディレクトリのみに含まれるアカウント (シングル テナント)|
 
-![004.png](./img/004.png)
+    ![004.png](./img/004.png)
 
 1. **概要** の **テナント ID** および **クライアント ID** の値をメモします。
 
-![005.png](./img/005.png)
+    ![005.png](./img/005.png)
 
 1. **証明書とシークレット** - **新しいクライアント シークレット** をクリックします。
 
 1. **追加** をクリックします。
 1. 作成された **クライアント シークレット** をメモします。
 
-![006.png](./img/006.png)
+    ![006.png](./img/006.png)
 
 1. メモした **テナント ID**、**クライアント ID**、**クライアント シークレット** を `appsettings.json` に貼り付けます。
 
     |項目名|項目値|
     |-|-|
-    |MicrosoftAppType|`MicrosoftAppType`|
+    |MicrosoftAppType|`SingleTenant`|
     |MicrosoftAppId|**クライアント ID**|
     |MicrosoftAppPassword|**クライアント シークレット**|
     |MicrosoftAppTenantId|**テナント ID**|
 
 ### Azure Web Apps を作成する
 
+この手順では、ボットが実際に動作する Web アプリを作成します。
+
+1. [Microsoft Azure ポータル](https://portal.azure.com) にアクセスし **Microsoft Azure サブスクリプション** があるテナントのアカウントでサインインします。
+1. メニューの **リソースの作成** - **Web** - **Web アプリ** をクリックします。
+1. **基本** タブで以下の項目を入力し **次: デプロイ** をクリックします。
+
+    |項目名|項目値|
+    |-|-|
+    |サブスクリプション|お使いのサブスクリプション|
+    |リソース グループ|任意、ない場合は新規作成|
+    |名前|任意、グローバルで一意になる名前|
+    |公開|`コード`|
+    |ランタイム スタック|`.NET 6 (LTS)`|
+    |オペレーティング システム|`Windows`|
+    |地域|任意、特になければ `Japan East`|
+    |Windows プラン|任意、ない場合は新規作成|
+    |価格プラン|`Basic B1`|
+
+1. **デプロイ** タブで **次: ネットワーク** をクリックします。
+1. **ネットワーク** タブで **次: 監視** をクリックします。
+1. **監視** タブで以下の項目を入力し **次: タグ** をクリックします。
+
+    |項目名|項目値|
+    |-|-|
+    |Application Insights を有効にする|`いいえ`|
+
+1. **タグ** タブで **次: 確認および作成** をクリックします。
+1. **確認および作成** タブで **作成** をクリックします。
+
+### Azure Web Apps にコードをデプロイする
+
+この手順では、作成した Azure Web Apps にコードをデプロイします。
+
+1. Visual Studio Code の **Azure** タブで **Azure にサインイン** をクリックします。
+1. **Microsoft Azure サブスクリプション** があるテナントのアカウントでサインインします。
+1. **お使いのサブスクリプション** - **App Services** - **作成した Azure Web Apps** を右クリックし、**Deploy to Web App** をクリックします。
+1. **TeamsAIBot** を選択します。
+1. **Add Config** をクリックします。
+1. **Deploy** をクリックします。
+1. デプロイが完了したら **Browse Website** をクリックしてサイトが表示されることを確認します。
+
 ### Azure Bot Service を作成する
 
-### Teams アプリをデプロイする
+この手順では、ボットを Teams に公開するための Azure Bot Service を作成します。
+
+1. [Microsoft Azure ポータル](https://portal.azure.com) にアクセスし **Microsoft Azure サブスクリプション** があるテナントのアカウントでサインインします。
+1. メニューの **リソースの作成** - **Web** - **Azure Bot** をクリックします。
+1. **基本** タブで以下の項目を入力し **次へ** をクリックします。
+
+    |項目名|項目値|
+    |-|-|
+    |ボット ハンドル|任意、グローバルで一意になる名前|
+    |サブスクリプション|お使いのサブスクリプション|
+    |リソース グループ|Azure Web Apps を作成したのとと同じリソース グループ|
+    |データ所在地|`グローバル`|
+    |価格レベル|`Free`|
+    |アプリの種類|`シングル テナント`|
+    |作成の種類|既存のアプリの登録を使用する|
+    |アプリ ID|上記の手順で作成した **クライアント ID**|
+    |アプリ テナント ID|上記の手順で作成した **テナント ID**|
+
+1. **タグ** タブで **次: 確認および作成** をクリックします。
+1. **確認および作成** タブで **作成** をクリックします。
+
+### Azure Bot Service を構成する
+
+この手順では、Azure Bot Service をボットに接続するための構成を設定します。
+
+1. 上記の手順で作成した Azure Bot Service を開きます。
+1. **構成** タブで以下の項目を入力し **適用** をクリックします。`{{web-app-name}}` の部分は上記の手順で作成した Azure Web Apps の名前で置き換えます。
+
+    |項目名|項目値|
+    |-|-|
+    |メッセージ エンドポイント|`https://{{web-app-name}}.azurewebsites.net/api/messages`|
+
+    ![007.png](./img/007.png)
+
+1. **チャンネル** タブで **Microsoft Teams** をクリックします。
+1. サービス条件のダイアログで **同意** をクリックします。
+1. **メッセージング** タブで **適用** をクリックします。
+
+    ![008.png](./img/008.png)
+
+1. **Web チャットでテスト** をクリックします。チャット欄に質問を入力し回答が得られることを確認します。
+
+    ![009.png](./img/009.png)
+
+### Teams アプリを作成する
+
+1. [Microsoft Teams 開発者ポータル](https://dev.teams.microsoft.com) にアクセスし **Microsoft 365 開発者プログラムで作成したテナント** のアカウントでサインインします。
+1. **Apps** - **New app** をクリックします。
+
+    ![010.png](./img/010.png)
+
+1. アプリ名を入力して **Add** をクリックします。 
+
+    ![011.png](./img/011.png)
+
+1. **Basic information** をクリックします。以下の項目を入力し **Save** をクリックします。`{{web-app-name}}` の部分は上記の手順で作成した Azure Web Apps の名前で置き換えます。
+
+    |項目名|項目値|
+    |-|-|
+    |Short description|Teams AI Bot|
+    |Long description|Teams AI Bot|
+    |Developer or company name|TeamsAIBot|
+    |Website|`https://{{web-app-name}}.azurewebsites.net/`|
+    |Privacy policy|`https://{{web-app-name}}.azurewebsites.net/`|
+    |Terms of use|`https://{{web-app-name}}.azurewebsites.net/`|
+    |Application (client) ID|上記の手順で作成した **クライアント ID**|
+
+    ![012.png](./img/012.png)
+
+1. **App feature** - **Bot** をクリックします。
+
+    ![013.png](./img/013.png)
+
+1. **Bot** ページで以下の項目を入力し **Save** をクリックします。
+
+    |項目名|項目値|
+    |-|-|
+    |Identify your bot|`Enter a bot ID`|
+    ||上記の手順で作成した **クライアント ID**|
+    |What can your bot do?|未選択|
+    |Select the scopes in which people can use this command|`Personal`|
+
+    ![014.png](./img/014.png)
+
+### Teams アプリを実行する
+
+1. **Preview in Teams** をクリックします。
+1. Teams をどのアプリで開くかを確認されるので **代わりに Web アプリを使用** をクリックします。
+
+    ![015.png](./img/015.png)
+
+1. アプリの情報が表示されるので **追加** をクリックします。
+
+    ![016.png](./img/016.png)
+
+1. チャット欄に質問を入力し回答が得られることを確認します。
+
+    ![017.png](./img/017.png)

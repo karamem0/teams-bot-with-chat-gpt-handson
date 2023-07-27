@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 //
 // Generated with EchoBot .NET Template version v4.17.1
@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Schema;
 using Microsoft.Extensions.Configuration;
+using System;
 using Azure.AI.OpenAI;
 
 namespace EchoBot.Bots
@@ -26,7 +27,7 @@ namespace EchoBot.Bots
 
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
-            var accessor = this.conversationState.CreateProperty<List<ChatMessage>>(nameof(ChatMessage));
+            var accessor = this.conversationState.CreateProperty<List<Tuple<string, string>>>(nameof(ChatMessage));
             var messages = await accessor.GetAsync(turnContext, () => new(), cancellationToken);
             while (messages.Count > 8)
             {
@@ -39,7 +40,10 @@ namespace EchoBot.Bots
             ));
             foreach (var message in messages)
             {
-                chatCompletionsOptions.Messages.Add(message);
+                chatCompletionsOptions.Messages.Add(new ChatMessage(
+                    new ChatRole(message.Item1),
+                    message.Item2
+                ));
             }
             chatCompletionsOptions.Messages.Add(new ChatMessage(ChatRole.User, turnContext.Activity.Text));
             var chatCompletion = await this.chatClient.GetChatCompletionsAsync(
@@ -49,8 +53,8 @@ namespace EchoBot.Bots
             );
             var replyText = chatCompletion.Value.Choices[0].Message.Content;
             await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
-            messages.Add(new ChatMessage(ChatRole.User, turnContext.Activity.Text));
-            messages.Add(new ChatMessage(ChatRole.Assistant, replyText));
+            messages.Add(new Tuple<string, string>(ChatRole.User.ToString(), turnContext.Activity.Text));
+            messages.Add(new Tuple<string, string>(ChatRole.Assistant.ToString(), replyText));
             await accessor.SetAsync(turnContext, messages, cancellationToken);
             await this.conversationState.SaveChangesAsync(turnContext, cancellationToken: cancellationToken);
         }
