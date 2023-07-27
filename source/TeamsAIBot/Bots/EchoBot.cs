@@ -20,7 +20,7 @@ namespace EchoBot.Bots
 
         public EchoBot(IConfiguration configuration, ConversationState conversationState)
         {
-            this.chatClient = new OpenAIClient("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");
+            this.chatClient = new OpenAIClient("{{api-key}}");
             this.conversationState = conversationState;
         }
 
